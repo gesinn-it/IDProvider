@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `update.php` failing with MySQL error 1170 (`BLOB/TEXT column 'prefix' used in key
+  specification without a key length`) when upgrading a wiki that already had
+  `idprovider_increments.prefix` as a legacy blob column from before 3.0. The schema
+  updater now uses `modifyExtensionField()` instead of `addExtensionField()`, so the
+  column is migrated to `varbinary(255) NOT NULL` even when it already existed, before
+  the `UNIQUE` index is added. [`8465b5d`](https://github.com/gesinn-it-pub/IDProvider/commit/8465b5d)
+
 ## [3.0.1] - 2026-08-12
 
 ### Added
