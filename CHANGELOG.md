@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-08-24
+
 ### Fixed
 
 - `update.php` failing with MySQL error 1170 (`BLOB/TEXT column 'prefix' used in key
@@ -14,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `idprovider_increments.prefix` as a legacy blob column from before 3.0. The schema
   updater now uses `modifyExtensionField()` instead of `addExtensionField()`, so the
   column is migrated to `varbinary(255) NOT NULL` even when it already existed, before
-  the `UNIQUE` index is added. [`8465b5d`](https://github.com/gesinn-it-pub/IDProvider/commit/8465b5d)
+  the `UNIQUE` index is added. [`8465b5d`](https://github.com/gesinn-it-pub/IDProvider/commit/8465b5d) ([#132](https://github.com/gesinn-it-pub/IDProvider/issues/132))
 
 ## [3.0.1] - 2026-08-12
 
@@ -63,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `phpstan` and `psalm` dev dependencies, which were declared but never configured
   (superseded by Phan). [`e511aff`](https://github.com/gesinn-it-pub/IDProvider/commit/e511aff)
 
-[Unreleased]: https://github.com/gesinn-it-pub/IDProvider/compare/3.0.1...HEAD
+[Unreleased]: https://github.com/gesinn-it-pub/IDProvider/compare/3.0.2...HEAD
+[3.0.2]: https://github.com/gesinn-it-pub/IDProvider/compare/3.0.1...3.0.2
 [3.0.1]: https://github.com/gesinn-it-pub/IDProvider/compare/3.0.0...3.0.1
 [3.0.0]: https://github.com/gesinn-it-pub/IDProvider/releases/tag/3.0.0
