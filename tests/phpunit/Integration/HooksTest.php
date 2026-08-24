@@ -12,6 +12,7 @@
 
 namespace Tests\Integration;
 
+use DatabaseUpdater;
 use MediaWiki\Extension\IdProvider\Hooks;
 use MediaWikiIntegrationTestCase;
 use ParserOptions;
@@ -132,5 +133,107 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( [ 7 ], $values );
 
 		$dbw->query( "DROP TEMPORARY TABLE $qualifiedTableName", __METHOD__ );
+	}
+
+	/**
+	 * Reads back the update entries DatabaseUpdater::addExtensionUpdate() queued into its
+	 * private $extensionUpdates array, so a test can drive exactly what
+	 * Hooks::onLoadExtensionSchemaUpdates() registered instead of hardcoding method names
+	 * that would drift out of sync with the production hook.
+	 *
+	 * @param DatabaseUpdater $updater
+	 * @return array
+	 */
+	private function getRegisteredExtensionUpdates( DatabaseUpdater $updater ): array {
+		$reflection = new \ReflectionMethod( DatabaseUpdater::class, 'getExtensionUpdates' );
+		$reflection->setAccessible( true );
+
+		return $reflection->invoke( $updater );
+	}
+
+	/**
+	 * Runs one extension-schema-update entry (as registered by
+	 * Hooks::onLoadExtensionSchemaUpdates) via DatabaseUpdater's protected
+	 * addField()/modifyField()/addIndex() methods, exactly as MediaWiki core's
+	 * private runUpdates() would dispatch it.
+	 *
+	 * @param DatabaseUpdater $updater
+	 * @param array $update Entry as queued by addExtension{Field,Index,ModifyField}()
+	 */
+	private function runExtensionUpdate( DatabaseUpdater $updater, array $update ): void {
+		$method = array_shift( $update );
+		if ( is_array( $method ) ) {
+			// addExtensionUpdate() callback entry, e.g. [ [ Hooks::class, 'mergeDuplicateIncrementPrefixes' ] ].
+			array_unshift( $update, $updater );
+			( $method )( ...$update );
+			return;
+		}
+		$reflection = new \ReflectionMethod( DatabaseUpdater::class, $method );
+		$reflection->setAccessible( true );
+		$reflection->invokeArgs( $updater, $update );
+	}
+
+	/**
+	 * Reproduces https://github.com/gesinn-it-pub/IDProvider/issues/132: on a wiki
+	 * upgrading from a pre-3.0 install, idprovider_increments.prefix already exists as a
+	 * nullable BLOB column. addExtensionField() only checks column *existence*, so
+	 * PatchPrefixField.sql (which converts it to varbinary(255) NOT NULL) is skipped, and
+	 * the later UNIQUE index creation then fails with MySQL error 1170 ("BLOB/TEXT column
+	 * ... used in key specification without a key length").
+	 *
+	 * The patch files hardcode the real `idprovider_increments` table name (they are run by
+	 * update.php against the live table, never a caller-supplied one), so the pre-existing
+	 * blob column is reproduced directly on that table rather than a throwaway one, and the
+	 * original schema/data is restored afterwards.
+	 */
+	public function testSchemaUpdateMigratesPreExistingBlobPrefixColumnBeforeAddingUniqueIndex() {
+		$dbw = method_exists( $this, 'getDb' ) ? $this->getDb() : $this->db;
+		$tableName = 'idprovider_increments';
+		$qualifiedTableName = $dbw->tableName( $tableName );
+		$indexName = 'idprovider_increments_prefix';
+
+		$rows = iterator_to_array(
+			$dbw->select( $tableName, [ 'pid', 'prefix', 'increment' ], [], __METHOD__ ),
+			false
+		);
+
+		$dbw->query( "ALTER TABLE $qualifiedTableName DROP INDEX $indexName", __METHOD__ );
+		// Mirrors the pre-3.0 schema confirmed on the affected wiki via
+		// `SHOW CREATE TABLE idprovider_increments` in the issue report.
+		$dbw->query( "ALTER TABLE $qualifiedTableName MODIFY COLUMN prefix blob", __METHOD__ );
+		$dbw->delete( $tableName, '*', __METHOD__ );
+		$dbw->insert( $tableName, [ 'prefix' => 'IDPTestLegacy', 'increment' => 5 ], __METHOD__ );
+
+		$updater = DatabaseUpdater::newForDB( $dbw );
+		Hooks::onLoadExtensionSchemaUpdates( $updater );
+
+		try {
+			foreach ( $this->getRegisteredExtensionUpdates( $updater ) as $update ) {
+				$this->runExtensionUpdate( $updater, $update );
+			}
+
+			$this->assertTrue(
+				$dbw->indexExists( $tableName, $indexName, __METHOD__ ),
+				'UNIQUE index should have been created after migrating the legacy blob column'
+			);
+		} finally {
+			if ( !$dbw->indexExists( $tableName, $indexName, __METHOD__ ) ) {
+				$dbw->query(
+					"CREATE UNIQUE INDEX $indexName ON $qualifiedTableName (prefix)",
+					__METHOD__
+				);
+			}
+			$dbw->query(
+				"ALTER TABLE $qualifiedTableName MODIFY COLUMN prefix varbinary(255) NOT NULL DEFAULT ''",
+				__METHOD__
+			);
+			$dbw->delete( $tableName, '*', __METHOD__ );
+			foreach ( $rows as $row ) {
+				$dbw->insert( $tableName,
+					[ 'pid' => $row->pid, 'prefix' => $row->prefix, 'increment' => $row->increment ],
+					__METHOD__
+				);
+			}
+		}
 	}
 }

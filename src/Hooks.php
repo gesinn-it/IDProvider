@@ -48,7 +48,7 @@ class Hooks {
 		$updater->addExtensionTable( 'idprovider_increments',
 			__DIR__ . '/../sql/CreateIncrementTable.sql' );
 
-		$updater->addExtensionField( 'idprovider_increments', 'prefix',
+		$updater->modifyExtensionField( 'idprovider_increments', 'prefix',
 			__DIR__ . '/../sql/PatchPrefixField.sql' );
 		$updater->addExtensionUpdate( [ [ self::class, 'mergeDuplicateIncrementPrefixes' ] ] );
 		$updater->addExtensionIndex( 'idprovider_increments', 'idprovider_increments_prefix',
